@@ -99,6 +99,7 @@ parseLineRet *parseLine(char *line, char *delimiter)
 
   while (token = strsep(&line, delimiter))
   {
+    if(strcmp(token, "") == 0) continue;
     // null-terminate token
     //  printf("%s is %d long\n", token, strlen(token));
     //  already null terminated
@@ -157,11 +158,23 @@ void runCommand(int argc, char *argv[])
     paths = temp->buf;
     pathCount = temp->size;
 
+
     // now search executable in every path token
     bool pathFound = false;
     char *finalPath;
     for (int i = 0; i < pathCount; i++)
     {
+      /*
+      when multiple delimiters are present continuously strsep return empty tokens
+      although these empty "" are not found in access() , so it works
+      but we are skipping it all together
+
+      fixed the parseLine() to skip "" so this is not needed anymore
+      */
+      // if(strcmp(paths[i],"") == 0){
+      //   printf("was here\n");
+      //   continue;
+      // }
       finalPath = malloc(strlen(paths[i]) + strlen(argv[0]) + 2);
       if (finalPath != NULL)
       {
@@ -180,6 +193,7 @@ void runCommand(int argc, char *argv[])
         else if (executableExist == 0)
         {
           pathFound = true;
+          // printf("final path: %s|\n", finalPath);
           break; // exit loop , since executable found
         }
       }
@@ -191,7 +205,9 @@ void runCommand(int argc, char *argv[])
       free(temp);
       printf("this shouldnt print if everythings fine\n");
       exit(EXIT_FAILURE);
-    }else{
+    }
+    else
+    {
       fprintf(stderr, "command %s not found\n", argv[0]);
       exit(EXIT_FAILURE);
     }
