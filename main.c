@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <stdbool.h>
 
 typedef struct
 {
@@ -155,10 +156,13 @@ void runCommand(int argc, char *argv[])
     parseLineRet *temp = parseLine(PATH, " ");
     paths = temp->buf;
     pathCount = temp->size;
-    
+
+    // now search executable in every path token
+    bool pathFound = false;
+    char *finalPath;
     for (int i = 0; i < pathCount; i++)
     {
-      char *finalPath = malloc(strlen(paths[i]) + strlen(argv[0]) + 2);
+      finalPath = malloc(strlen(paths[i]) + strlen(argv[0]) + 2);
       if (finalPath != NULL)
       {
         strcpy(finalPath, paths[i]);
@@ -171,16 +175,25 @@ void runCommand(int argc, char *argv[])
         if (executableExist == -1)
         {
           free(finalPath);
-          // errorOccured();
-          // perror("executable not found");
-          // exit(EXIT_FAILURE);
-          continue;
+          continue; // to next token
         }
-        execv(finalPath, argv);
-        free(temp);
-        printf("this shouldnt print if everythings fine\n");
-        exit(EXIT_FAILURE);
+        else if (executableExist == 0)
+        {
+          pathFound = true;
+          break; // exit loop , since executable found
+        }
       }
+    }
+
+    if (pathFound)
+    {
+      execv(finalPath, argv);
+      free(temp);
+      printf("this shouldnt print if everythings fine\n");
+      exit(EXIT_FAILURE);
+    }else{
+      fprintf(stderr, "command %s not found\n", argv[0]);
+      exit(EXIT_FAILURE);
     }
   }
   else
