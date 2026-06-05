@@ -11,16 +11,18 @@ typedef struct
   int size;
 } parseLineRet;
 
-char* PATH = "/bin";
+char *PATH;
+int pathSize = 4;
 
 void errorOccured();
 parseLineRet *parseLine(char *line, char *delimiter);
 void runCommand(int argc, char *argv[]);
-void addPath(int argc, char *argv[]);
-
+void initPath();
+void addPath(int pathArgCount, char *pathArgs[]);
 
 int main(int argc, char *argv[])
 {
+  initPath();
   if (argc > 1)
   {
     fprintf(stdout, "%s %s\n", argv[0], argv[1]);
@@ -48,11 +50,15 @@ int main(int argc, char *argv[])
       { // not checking EOF
         free(line);
         free(tokens);
+        free(PATH);
         exit(0);
       }
       else if (strcmp(tokens[0], "path") == 0)
       {
         //
+        // printf("PATH: %s len: %d\n", PATH, strlen(PATH));
+        addPath(bufsize, tokens);
+        // printf("PATH: %s len: %d\n", PATH, strlen(PATH));
       }
       else
       {
@@ -70,11 +76,6 @@ int main(int argc, char *argv[])
     }
   }
 }
-
-
-
-
-
 
 void errorOccured()
 {
@@ -147,18 +148,40 @@ void runCommand(int argc, char *argv[])
   }
   else if (pid == 0)
   {
-    // child process
-    // check if executable exists
-    int executableExist = access(argv[0], X_OK);
-    if (executableExist == -1)
+    // checking if executable exists
+    // getting path tokens
+    char **paths;
+    int pathCount;
+    parseLineRet *temp = parseLine(PATH, " ");
+    paths = temp->buf;
+    pathCount = temp->size;
+    
+    for (int i = 0; i < pathCount; i++)
     {
-      errorOccured();
-      perror("executable not found");
-      exit(EXIT_FAILURE);
+      char *finalPath = malloc(strlen(paths[i]) + strlen(argv[0]) + 2);
+      if (finalPath != NULL)
+      {
+        strcpy(finalPath, paths[i]);
+        strcat(finalPath, "/");
+        strcat(finalPath, argv[0]);
+
+        // printf("final path: %s\n", finalPath);
+
+        int executableExist = access(finalPath, X_OK);
+        if (executableExist == -1)
+        {
+          free(finalPath);
+          // errorOccured();
+          // perror("executable not found");
+          // exit(EXIT_FAILURE);
+          continue;
+        }
+        execv(finalPath, argv);
+        free(temp);
+        printf("this shouldnt print if everythings fine\n");
+        exit(EXIT_FAILURE);
+      }
     }
-    execvp(argv[0], argv);
-    printf("this shouldnt print if everythings fine\n");
-    exit(EXIT_FAILURE);
   }
   else
   {
@@ -167,11 +190,39 @@ void runCommand(int argc, char *argv[])
   }
 }
 
-void addPath(int argc, char *argv[]){
-  if(argc == 0){
-    PATH = NULL;
-  }
-  else if(argc > 0){
-    
+void initPath()
+{
+  PATH = malloc(pathSize + 1); // for \0
+  strcpy(PATH, "/bin");
+}
+
+void addPath(int pathArgCount, char *pathArgs[])
+{
+  pathSize = 0;
+  free(PATH);
+  PATH = NULL;
+
+  if (pathArgCount - 1 > 0)
+  {
+    for (int i = 1; i < pathArgCount; i++)
+    {
+      // realloc
+      char *temp = realloc(PATH, pathSize + strlen(pathArgs[i]) + 2); // +2 for space in between and \0 at end
+      if (temp == NULL)
+      {
+        perror("realloc");
+        exit(EXIT_FAILURE);
+      }
+      PATH = temp;
+
+      if (i == 1)
+      {
+        strcpy(PATH, pathArgs[i]);
+        continue;
+      }
+
+      PATH = strcat(PATH, " ");
+      PATH = strcat(PATH, pathArgs[i]);
+    }
   }
 }
