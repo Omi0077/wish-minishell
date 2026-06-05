@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
       size_t len = 0;
       getline(&line, &len, stdin);
 
-      char *delimiter = " ";
+      char *delimiter = " \t";
       char **tokens;
 
       line[strcspn(line, "\n")] = '\0';
