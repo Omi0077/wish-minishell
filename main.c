@@ -289,3 +289,5 @@ void addPath(int pathArgCount, char *pathArgs[]) // doesnt own char *pathArgs[]
     }
   }
 }
+
+// work on new features
