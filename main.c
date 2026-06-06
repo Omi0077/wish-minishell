@@ -12,14 +12,29 @@ typedef struct
   int size;
 } parseLineRet;
 
-char *PATH;
-int pathSize = 4;
+char **path_dirs;
+int pathCount = 0;
+int path_dir_size = 0;
+
+// some utils
+
+//this works with any type
+#define my_free(ptr) do { free(ptr); (ptr) = NULL; } while(0)
+
+void printPathDirs(){
+  for(int i=0; i<pathCount; i++){
+    printf("%d path: %s\n", i, path_dirs[i]);
+  }
+}
 
 void errorOccured();
 parseLineRet *parseLine(char *line, char *delimiter);
 void runCommand(int argc, char *argv[]);
+
+// path related functons
 void initPath();
 void addPath(int pathArgCount, char *pathArgs[]);
+void freePath_dirs();
 
 int main(int argc, char *argv[])
 {
@@ -49,17 +64,17 @@ int main(int argc, char *argv[])
 
       if (strcmp(tokens[0], "bye") == 0)
       { // not checking EOF
-        free(line);
-        free(tokens);
-        free(PATH);
+        my_free(line);
+        my_free(tokens);
+        my_free(path_dirs);
         exit(0);
       }
       else if (strcmp(tokens[0], "path") == 0)
       {
         //
-        // printf("PATH: %s len: %d\n", PATH, strlen(PATH));
+        // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
         addPath(bufsize, tokens);
-        // printf("PATH: %s len: %d\n", PATH, strlen(PATH));
+        // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
       }
       else
       {
@@ -73,7 +88,8 @@ int main(int argc, char *argv[])
         runCommand(bufsize, myArgs);
       }
 
-      free(temp);
+      my_free(temp->buf);
+      my_free(temp);
     }
   }
 }
@@ -99,7 +115,8 @@ parseLineRet *parseLine(char *line, char *delimiter)
 
   while (token = strsep(&line, delimiter))
   {
-    if(strcmp(token, "") == 0) continue;
+    if (strcmp(token, "") == 0)
+      continue;
     // null-terminate token
     //  printf("%s is %d long\n", token, strlen(token));
     //  already null terminated
@@ -111,7 +128,7 @@ parseLineRet *parseLine(char *line, char *delimiter)
       char **new_buf = realloc(buf, bufsize * sizeof(char *));
       if (new_buf == NULL)
       {
-        free(buf);
+        my_free(buf);
         return NULL;
       }
       buf = new_buf;
@@ -142,7 +159,7 @@ void runCommand(int argc, char *argv[])
   {
     exit(EXIT_FAILURE);
   }
-  int pid = fork();
+  pid_t pid = fork();
   if (pid == -1)
   {
     perror("fork");
@@ -151,34 +168,16 @@ void runCommand(int argc, char *argv[])
   else if (pid == 0)
   {
     // checking if executable exists
-    // getting path tokens
-    char **paths;
-    int pathCount;
-    parseLineRet *temp = parseLine(PATH, " ");
-    paths = temp->buf;
-    pathCount = temp->size;
-
 
     // now search executable in every path token
     bool pathFound = false;
     char *finalPath;
     for (int i = 0; i < pathCount; i++)
     {
-      /*
-      when multiple delimiters are present continuously strsep return empty tokens
-      although these empty "" are not found in access() , so it works
-      but we are skipping it all together
-
-      fixed the parseLine() to skip "" so this is not needed anymore
-      */
-      // if(strcmp(paths[i],"") == 0){
-      //   printf("was here\n");
-      //   continue;
-      // }
-      finalPath = malloc(strlen(paths[i]) + strlen(argv[0]) + 2);
+      finalPath = malloc(strlen(path_dirs[i]) + strlen(argv[0]) + 2);
       if (finalPath != NULL)
       {
-        strcpy(finalPath, paths[i]);
+        strcpy(finalPath, path_dirs[i]);
         strcat(finalPath, "/");
         strcat(finalPath, argv[0]);
 
@@ -187,13 +186,12 @@ void runCommand(int argc, char *argv[])
         int executableExist = access(finalPath, X_OK);
         if (executableExist == -1)
         {
-          free(finalPath);
+          my_free(finalPath);
           continue; // to next token
         }
         else if (executableExist == 0)
         {
           pathFound = true;
-          // printf("final path: %s|\n", finalPath);
           break; // exit loop , since executable found
         }
       }
@@ -202,7 +200,6 @@ void runCommand(int argc, char *argv[])
     if (pathFound)
     {
       execv(finalPath, argv);
-      free(temp);
       printf("this shouldnt print if everythings fine\n");
       exit(EXIT_FAILURE);
     }
@@ -221,37 +218,64 @@ void runCommand(int argc, char *argv[])
 
 void initPath()
 {
-  PATH = malloc(pathSize + 1); // for \0
-  strcpy(PATH, "/bin");
+  path_dirs = malloc(++path_dir_size * sizeof(char *));
+  // increment path_dir_size then allocate
+  if (path_dirs != NULL)
+  {
+    path_dirs[pathCount++] = strdup("/bin");
+  }
+  else
+  {
+    errorOccured();
+    perror("malloc");
+    exit(EXIT_FAILURE);
+  }
 }
 
-void addPath(int pathArgCount, char *pathArgs[])
+void freePath_dirs()
 {
-  pathSize = 0;
-  free(PATH);
-  PATH = NULL;
+  if (path_dir_size == 0)
+    return;
+  // my_free all char* first
+  for (int i = 0; i < path_dir_size; i++)
+  {
+    if (path_dirs[i] != NULL)
+    {
+      my_free(path_dirs[i]);
+    }
+  }
+  path_dir_size = 0;
+  pathCount = 0;
+  // now my_free char**
+  if (path_dirs != NULL)
+  {
+    my_free(path_dirs);
+  }
+}
+
+void addPath(int pathArgCount, char *pathArgs[]) // doesnt own char *pathArgs[]
+{
+  printPathDirs();
+  freePath_dirs();
 
   if (pathArgCount - 1 > 0)
   {
+    // pathArgCount-1 no. of char* to be added in Char** path_dirs
+    path_dir_size += pathArgCount - 1;
+    char **temp = malloc(path_dir_size * sizeof(char *));
+    if (temp == NULL)
+    {
+      errorOccured();
+      perror("malloc");
+      exit(EXIT_FAILURE);
+    }
+    path_dirs = temp;
+
+    // now iterate over all the pathArgs and strdup it in path_dirs
     for (int i = 1; i < pathArgCount; i++)
     {
-      // realloc
-      char *temp = realloc(PATH, pathSize + strlen(pathArgs[i]) + 2); // +2 for space in between and \0 at end
-      if (temp == NULL)
-      {
-        perror("realloc");
-        exit(EXIT_FAILURE);
-      }
-      PATH = temp;
-
-      if (i == 1)
-      {
-        strcpy(PATH, pathArgs[i]);
-        continue;
-      }
-
-      PATH = strcat(PATH, " ");
-      PATH = strcat(PATH, pathArgs[i]);
+      path_dirs[pathCount++] = strdup(pathArgs[i]);
     }
   }
+  printPathDirs();
 }
