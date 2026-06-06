@@ -50,7 +50,10 @@ int main(int argc, char *argv[])
       fprintf(stdout, "wish> ");
       char *line = NULL;
       size_t len = 0;
-      getline(&line, &len, stdin);
+      if(getline(&line, &len, stdin) == -1){
+        my_free(line);
+        exit(EXIT_SUCCESS);
+      }
 
       char *delimiter = " \t";
       char **tokens;
@@ -62,12 +65,17 @@ int main(int argc, char *argv[])
       tokens = temp->buf;
       int bufsize = temp->size;
 
+      /* 
+      since we are freeing line, and each char* in tokens/temp->buf points to subset of line
+      as thats how strsep works, we dont have to free each char* .
+      */
       if (strcmp(tokens[0], "bye") == 0)
       { // not checking EOF
         my_free(line);
         my_free(tokens);
+        my_free(temp);
         my_free(path_dirs);
-        exit(0);
+        exit(EXIT_SUCCESS);
       }
       else if (strcmp(tokens[0], "path") == 0)
       {
@@ -88,6 +96,7 @@ int main(int argc, char *argv[])
         runCommand(bufsize, myArgs);
       }
 
+      my_free(line);
       my_free(temp->buf);
       my_free(temp);
     }
@@ -100,7 +109,13 @@ void errorOccured()
   write(STDERR_FILENO, error_message, strlen(error_message));
 }
 
-parseLineRet *parseLine(char *line, char *delimiter)
+/*
+I know i am being iconsistent with ownership model , in case with path_dirs i am using strdup() by which 
+if i am filling char*s in char** i will have to free each char* individually.
+but in this case i am using which mdifies line* which it doesnt own, but i am doing it carefully
+knowing that i am not going to free(line) before freeing buf/temp->buff/tokens.
+*/
+parseLineRet *parseLine(char *line, char *delimiter) // doesnt own line
 {
   char **buf;
   int bufsize = 4;
@@ -117,9 +132,6 @@ parseLineRet *parseLine(char *line, char *delimiter)
   {
     if (strcmp(token, "") == 0)
       continue;
-    // null-terminate token
-    //  printf("%s is %d long\n", token, strlen(token));
-    //  already null terminated
 
     // check if buffer is full
     if (offset == bufsize - 1)
