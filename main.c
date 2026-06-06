@@ -255,7 +255,6 @@ void freePath_dirs()
 
 void addPath(int pathArgCount, char *pathArgs[]) // doesnt own char *pathArgs[]
 {
-  printPathDirs();
   freePath_dirs();
 
   if (pathArgCount - 1 > 0)
@@ -277,5 +276,4 @@ void addPath(int pathArgCount, char *pathArgs[]) // doesnt own char *pathArgs[]
       path_dirs[pathCount++] = strdup(pathArgs[i]);
     }
   }
-  printPathDirs();
 }
