@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <stdbool.h>
+#include <sys/stat.h>
 
 typedef struct
 {
@@ -12,24 +13,38 @@ typedef struct
   int size;
 } parseLineRet;
 
+typedef struct
+{
+  char *output;
+  int OutputIndex;
+} handleRedirectRet;
+
 char **path_dirs;
 int pathCount = 0;
 int path_dir_size = 0;
 
 // some utils
 
-//this works with any type
-#define my_free(ptr) do { free(ptr); (ptr) = NULL; } while(0)
+// this works with any type
+#define my_free(ptr) \
+  do                 \
+  {                  \
+    free(ptr);       \
+    (ptr) = NULL;    \
+  } while (0)
 
-void printPathDirs(){
-  for(int i=0; i<pathCount; i++){
+void printPathDirs()
+{
+  for (int i = 0; i < pathCount; i++)
+  {
     printf("%d path: %s\n", i, path_dirs[i]);
   }
 }
 
 void errorOccured();
 parseLineRet *parseLine(char *line, char *delimiter);
-void runCommand(int argc, char *argv[]);
+void runCommand(int argc, char *argv[], char* output);
+handleRedirectRet *handleRedirect(char **tokens, int bufsize);
 
 // path related functons
 void initPath();
@@ -50,7 +65,8 @@ int main(int argc, char *argv[])
       fprintf(stdout, "wish> ");
       char *line = NULL;
       size_t len = 0;
-      if(getline(&line, &len, stdin) == -1){
+      if (getline(&line, &len, stdin) == -1)
+      {
         my_free(line);
         exit(EXIT_SUCCESS);
       }
@@ -65,7 +81,7 @@ int main(int argc, char *argv[])
       tokens = temp->buf;
       int bufsize = temp->size;
 
-      /* 
+      /*
       since we are freeing line, and each char* in tokens/temp->buf points to subset of line
       as thats how strsep works, we dont have to free each char* .
       */
@@ -84,25 +100,48 @@ int main(int argc, char *argv[])
         addPath(bufsize, tokens);
         // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
       }
-      else if(strcmp(tokens[0], "cd") == 0){
-        if(bufsize != 2){
+      else if (strcmp(tokens[0], "cd") == 0)
+      {
+        if (bufsize != 2)
+        {
           errorOccured();
         }
-        else{
+        else
+        {
           int cd = chdir(tokens[1]);
-          if(cd != 0) errorOccured;
+          if (cd != 0)
+            errorOccured;
         }
       }
       else
       {
-        char *myArgs[bufsize + 1];
-        for (int i = 0; i < bufsize; i++)
+        handleRedirectRet *redirect_temp = handleRedirect(tokens, bufsize);
+        if (redirect_temp == NULL)
         {
-          myArgs[i] = tokens[i];
-        }
-        myArgs[bufsize] = NULL; // set last as NULL
+          char *myArgs[bufsize + 1];
+          for (int i = 0; i < bufsize; i++)
+          {
+            myArgs[i] = tokens[i];
+          }
+          myArgs[bufsize] = NULL; // set last as NULL
 
-        runCommand(bufsize, myArgs);
+          runCommand(bufsize, myArgs, NULL);
+        }
+        else
+        {
+          int argCount = bufsize - 2; // [buf] [>] [output]
+          char *myArgs[argCount];
+          for (int i = 0; i < argCount; i++)
+          {
+            myArgs[i] = tokens[i];
+          }
+          myArgs[argCount] = NULL; // set last as NULL
+
+          runCommand(argCount, myArgs, redirect_temp->output);
+
+          my_free(redirect_temp->output);
+          my_free(redirect_temp);
+        }
       }
 
       my_free(line);
@@ -119,7 +158,7 @@ void errorOccured()
 }
 
 /*
-I know i am being iconsistent with ownership model , in case with path_dirs i am using strdup() by which 
+I know i am being iconsistent with ownership model , in case with path_dirs i am using strdup() by which
 if i am filling char*s in char** i will have to free each char* individually.
 but in this case i am using which mdifies line* which it doesnt own, but i am doing it carefully
 knowing that i am not going to free(line) before freeing buf/temp->buff/tokens.
@@ -174,7 +213,7 @@ parseLineRet *parseLine(char *line, char *delimiter) // doesnt own line
   return temp;
 }
 
-void runCommand(int argc, char *argv[])
+void runCommand(int argc, char *argv[], char* output)
 {
   if (argc < 1)
   {
@@ -220,6 +259,11 @@ void runCommand(int argc, char *argv[])
 
     if (pathFound)
     {
+      if(output != NULL){
+        close(STDOUT_FILENO);
+        close(STDERR_FILENO);
+        open(output, O_CREAT|O_RDWR|O_TRUNC , S_IRWXU);
+      }
       execv(finalPath, argv);
       printf("this shouldnt print if everythings fine\n");
       exit(EXIT_FAILURE);
@@ -299,4 +343,26 @@ void addPath(int pathArgCount, char *pathArgs[]) // doesnt own char *pathArgs[]
   }
 }
 
-// work on new features
+handleRedirectRet *handleRedirect(char **tokens, int bufsize) // doesnt own tokens
+{
+  for (int i = 0; i < bufsize; i++)
+  {
+    if (strcmp(tokens[i], ">") == 0)
+    {
+      if (i != bufsize - 2){
+        errorOccured();
+        return NULL;
+      }
+      if (strcmp(tokens[i + 1], ">") == 0){
+        errorOccured();
+        return NULL;
+      }
+
+      handleRedirectRet *temp = malloc(sizeof(handleRedirectRet));
+      temp->output = strdup(tokens[i + 1]);
+      temp->OutputIndex = i + 1;
+      return temp;
+    }
+  }
+  return NULL;
+}
