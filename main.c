@@ -84,6 +84,15 @@ int main(int argc, char *argv[])
         addPath(bufsize, tokens);
         // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
       }
+      else if(strcmp(tokens[0], "cd") == 0){
+        if(bufsize != 2){
+          errorOccured();
+        }
+        else{
+          int cd = chdir(tokens[1]);
+          if(cd != 0) errorOccured;
+        }
+      }
       else
       {
         char *myArgs[bufsize + 1];
