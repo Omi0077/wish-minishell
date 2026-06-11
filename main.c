@@ -68,6 +68,7 @@ int main(int argc, char *argv[])
       if (getline(&line, &len, stdin) == -1)
       {
         my_free(line);
+        freePath_dirs();
         exit(EXIT_SUCCESS);
       }
 
@@ -90,7 +91,7 @@ int main(int argc, char *argv[])
         my_free(line);
         my_free(tokens);
         my_free(temp);
-        my_free(path_dirs);
+        freePath_dirs();
         exit(EXIT_SUCCESS);
       }
       else if (strcmp(tokens[0], "path") == 0)
@@ -110,7 +111,7 @@ int main(int argc, char *argv[])
         {
           int cd = chdir(tokens[1]);
           if (cd != 0)
-            errorOccured;
+            errorOccured();
         }
       }
       else
@@ -130,7 +131,7 @@ int main(int argc, char *argv[])
         else
         {
           int argCount = bufsize - 2; // [buf] [>] [output]
-          char *myArgs[argCount];
+          char *myArgs[argCount + 1];
           for (int i = 0; i < argCount; i++)
           {
             myArgs[i] = tokens[i];
