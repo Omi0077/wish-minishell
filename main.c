@@ -444,7 +444,7 @@ getCommandsRet *getCommands(char *line)
     {
       if (strcmp(temp_tokens->buf[tknNum], ">") == 0)
       {
-        if (tknNum != (temp_tokens->size - 2)) // if > is not second last
+        if (tknNum != (temp_tokens->size - 2) || tknNum == 0) // if > is not second last or in first
         {
           errorOccured();
           freeStringArray(commandStrings, commandStringCount);
