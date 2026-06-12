@@ -7,6 +7,32 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 
+/*
+The refactor would be:
+
+Split line on & first → gives you N command strings
+For each command string, run your parseLine → gives you tokens
+Scan tokens for > → extract output file, strip > and filename from argv
+Store result in a Command struct
+
+Then your execution loop is just: for each Command, fork and exec it, with a single unified runCommand(Command *cmd).
+*/
+
+typedef struct
+{
+  char **argv;
+  char *outputFile;
+  int argc;
+} Command;
+
+typedef struct
+{
+  Command *cmds;
+  int cmdsCount;
+} getCommandsRet;
+
+getCommandsRet *getCommands(char *line);
+
 typedef struct
 {
   char **buf;
@@ -41,9 +67,18 @@ void printPathDirs()
   }
 }
 
+void freeStringArray(char **buf, int len)
+{
+  for (int i = 0; i < len; i++)
+  {
+    my_free(buf[i]);
+  }
+  my_free(buf);
+}
+
 void errorOccured();
 parseLineRet *parseLine(char *line, char *delimiter);
-void runCommand(int argc, char *argv[], char* output);
+void runCommand(int argc, char *argv[], char *output);
 handleRedirectRet *handleRedirect(char **tokens, int bufsize);
 
 // path related functons
@@ -62,7 +97,7 @@ int main(int argc, char *argv[])
   {
     while (1)
     {
-      fprintf(stdout, "wish> ");
+      printf("wish> ");
       char *line = NULL;
       size_t len = 0;
       if (getline(&line, &len, stdin) == -1)
@@ -72,11 +107,14 @@ int main(int argc, char *argv[])
         exit(EXIT_SUCCESS);
       }
 
+      // replace \n caught by getline
+      line[strcspn(line, "\n")] = '\0';
+
+      // parse commands out of line
+      getCommandsRet *commands = getCommands(line);
+
       char *delimiter = " \t";
       char **tokens;
-
-      line[strcspn(line, "\n")] = '\0';
-      // replace \n caught by getline
 
       parseLineRet *temp = parseLine(line, delimiter);
       tokens = temp->buf;
@@ -195,7 +233,7 @@ parseLineRet *parseLine(char *line, char *delimiter) // doesnt own line
       buf = new_buf;
     }
 
-    buf[offset++] = token;
+    buf[offset++] = strdup(token);
   }
 
   // shrinking buffer to fit
@@ -214,7 +252,7 @@ parseLineRet *parseLine(char *line, char *delimiter) // doesnt own line
   return temp;
 }
 
-void runCommand(int argc, char *argv[], char* output)
+void runCommand(int argc, char *argv[], char *output)
 {
   if (argc < 1)
   {
@@ -260,10 +298,11 @@ void runCommand(int argc, char *argv[], char* output)
 
     if (pathFound)
     {
-      if(output != NULL){
+      if (output != NULL)
+      {
         close(STDOUT_FILENO);
         close(STDERR_FILENO);
-        open(output, O_CREAT|O_RDWR|O_TRUNC , S_IRWXU);
+        open(output, O_CREAT | O_RDWR | O_TRUNC, S_IRWXU);
       }
       execv(finalPath, argv);
       printf("this shouldnt print if everythings fine\n");
@@ -350,11 +389,13 @@ handleRedirectRet *handleRedirect(char **tokens, int bufsize) // doesnt own toke
   {
     if (strcmp(tokens[i], ">") == 0)
     {
-      if (i != bufsize - 2){
+      if (i != bufsize - 2)
+      {
         errorOccured();
         return NULL;
       }
-      if (strcmp(tokens[i + 1], ">") == 0){
+      if (strcmp(tokens[i + 1], ">") == 0)
+      {
         errorOccured();
         return NULL;
       }
@@ -366,4 +407,97 @@ handleRedirectRet *handleRedirect(char **tokens, int bufsize) // doesnt own toke
     }
   }
   return NULL;
+}
+
+getCommandsRet *getCommands(char *line)
+{
+  // first split on &
+  char **commandStrings;
+  int commandStringCount;
+
+  parseLineRet *temp_commandString = parseLine(line, "&");
+  if (temp_commandString == NULL)
+    return NULL;
+
+  commandStrings = temp_commandString->buf;
+  commandStringCount = temp_commandString->size;
+
+  // now split commandStrings into tokens
+  Command *commands = malloc(commandStringCount * sizeof(Command));
+
+  for (int cmdNum = 0; cmdNum < commandStringCount; cmdNum++)
+  {
+    parseLineRet *temp_tokens = parseLine(commandStrings[cmdNum], " \t");
+    if (temp_tokens == NULL)
+    {
+      freeStringArray(commandStrings, commandStringCount);
+      my_free(temp_commandString);
+      my_free(commands);
+      return NULL;
+    }
+
+    // default value for command outputfile and argc
+    commands[cmdNum].outputFile = NULL;
+    commands[cmdNum].argc = (temp_tokens->size);
+
+    for (int tknNum = 0; tknNum < temp_tokens->size; tknNum++)
+    {
+      if (strcmp(temp_tokens->buf[tknNum], ">") == 0)
+      {
+        if (tknNum != (temp_tokens->size - 2)) // if > is not second last
+        {
+          errorOccured();
+          freeStringArray(commandStrings, commandStringCount);
+          my_free(temp_commandString);
+          my_free(commands);
+          freeStringArray(temp_tokens->buf, temp_tokens->size);
+          my_free(temp_tokens);
+          return NULL;
+        }
+        if (strcmp(temp_tokens->buf[tknNum + 1], ">") == 0) // if there are consecutive >
+        {
+          errorOccured();
+          freeStringArray(commandStrings, commandStringCount);
+          my_free(temp_commandString);
+          my_free(commands);
+          freeStringArray(temp_tokens->buf, temp_tokens->size);
+          my_free(temp_tokens);
+          return NULL;
+        }
+        // now re-write the respective command data
+        commands[cmdNum].outputFile = temp_tokens->buf[tknNum + 1]; // not using strdup here
+        commands[cmdNum].argc = (temp_tokens->size) - 2;
+      }
+    }
+
+    // now fill argv of command
+    commands[cmdNum].argv = malloc((commands[cmdNum].argc) * sizeof(char *));
+
+    for (int argNum = 0; argNum < commands[cmdNum].argc; argNum++)
+    {
+      commands[cmdNum].argv[argNum] = temp_tokens->buf[argNum]; // not using strdup here
+    }
+  }
+
+  // for (int i = 0; i < commandStringCount; i++)
+  // {
+  //   printf("command no. %d\n", i + 1);
+  //   for (int j = 0; j < commands[i].argc; j++)
+  //   {
+  //     printf("arg %d: %s\n", j + 1, commands[i].argv[j]);
+  //   }
+  //   printf("output file: %s\n", commands[i].outputFile);
+  // }
+
+  /*
+  since we used parseline to get temp_tokens which uses strdup for each token in temp_tokens->buf so we can free
+  commandStrings which was passed in parseline for tokenization of each command
+  */
+  freeStringArray(commandStrings, commandStringCount);
+  my_free(temp_commandString);
+
+  getCommandsRet *temp = malloc(sizeof(getCommandsRet));
+  temp->cmds = commands;
+  temp->cmdsCount = commandStringCount;
+  return temp;
 }
