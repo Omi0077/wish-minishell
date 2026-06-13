@@ -39,12 +39,6 @@ typedef struct
   int size;
 } parseLineRet;
 
-typedef struct
-{
-  char *output;
-  int OutputIndex;
-} handleRedirectRet;
-
 char **path_dirs;
 int pathCount = 0;
 int path_dir_size = 0;
@@ -76,11 +70,10 @@ void freeStringArray(char **buf, int len)
   my_free(buf);
 }
 
-char* preProcessLine(char* line);
+char *preProcessLine(char *line);
 void errorOccured();
 parseLineRet *parseLine(char *line, char *delimiter);
 void runCommand(int argc, char *argv[], char *output);
-handleRedirectRet *handleRedirect(char **tokens, int bufsize);
 
 // path related functons
 void initPath();
@@ -115,98 +108,93 @@ int main(int argc, char *argv[])
       line = preProcessLine(line);
 
       // parse commands out of line
-      getCommandsRet *commands = getCommands(line);
+      getCommandsRet *temp_commands = getCommands(line);
+      Command *commands = temp_commands->cmds;
+      int commandCount = temp_commands->cmdsCount;
 
-      char *delimiter = " \t";
-      char **tokens;
+      // char *delimiter = " \t";
+      // char **tokens;
 
-      parseLineRet *temp = parseLine(line, delimiter);
-      tokens = temp->buf;
-      int bufsize = temp->size;
+      // parseLineRet *temp = parseLine(line, delimiter);
+      // tokens = temp->buf;
+      // int bufsize = temp->size;
 
-      /*
-      since we are freeing line, and each char* in tokens/temp->buf points to subset of line
-      as thats how strsep works, we dont have to free each char* .
-      */
-      if (strcmp(tokens[0], "bye") == 0)
-      { // not checking EOF
-        my_free(line);
-        my_free(tokens);
-        my_free(temp);
-        freePath_dirs();
-        exit(EXIT_SUCCESS);
-      }
-      else if (strcmp(tokens[0], "path") == 0)
+      for (int i = 0; i < commandCount; i++)
       {
-        //
-        // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
-        addPath(bufsize, tokens);
-        // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
-      }
-      else if (strcmp(tokens[0], "cd") == 0)
-      {
-        if (bufsize != 2)
-        {
-          errorOccured();
+        Command *currCommand = &commands[i];
+
+        /*
+        since we are freeing line, and each char* in tokens/temp->buf points to subset of line
+        as thats how strsep works, we dont have to free each char* .
+        */
+        if (strcmp(currCommand->argv[0], "bye") == 0)
+        { // not checking EOF
+          my_free(line);
+          my_free(commands);
+          my_free(temp_commands);
+          freePath_dirs();
+          exit(EXIT_SUCCESS);
         }
-        else
+        else if (strcmp(currCommand->argv[0], "path") == 0)
         {
-          int cd = chdir(tokens[1]);
-          if (cd != 0)
+          //
+          // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
+          addPath(currCommand->argc, currCommand->argv);
+          // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
+        }
+        else if (strcmp(currCommand->argv[0], "cd") == 0)
+        {
+          if (currCommand->argc != 2)
+          {
             errorOccured();
-        }
-      }
-      else
-      {
-        handleRedirectRet *redirect_temp = handleRedirect(tokens, bufsize);
-        if (redirect_temp == NULL)
-        {
-          char *myArgs[bufsize + 1];
-          for (int i = 0; i < bufsize; i++)
-          {
-            myArgs[i] = tokens[i];
           }
-          myArgs[bufsize] = NULL; // set last as NULL
-
-          runCommand(bufsize, myArgs, NULL);
+          else
+          {
+            int cd = chdir(currCommand->argv[1]);
+            if (cd != 0)
+              errorOccured();
+          }
         }
         else
         {
-          int argCount = bufsize - 2; // [buf] [>] [output]
-          char *myArgs[argCount + 1];
-          for (int i = 0; i < argCount; i++)
+          char *myArgs[currCommand->argc + 1];
+          for (int i = 0; i < currCommand->argc; i++)
           {
-            myArgs[i] = tokens[i];
+            myArgs[i] = currCommand->argv[i];
           }
-          myArgs[argCount] = NULL; // set last as NULL
+          myArgs[currCommand->argc] = NULL; // set last as NULL
 
-          runCommand(argCount, myArgs, redirect_temp->output);
+          runCommand(currCommand->argc, myArgs, currCommand->outputFile);
 
-          my_free(redirect_temp->output);
-          my_free(redirect_temp);
         }
       }
+      while(wait(NULL) > 0); // wait for all process to finish
 
       my_free(line);
-      my_free(temp->buf);
-      my_free(temp);
+      my_free(commands);
+      my_free(temp_commands);
     }
   }
 }
 
-char* preProcessLine(char* line){
+
+char *preProcessLine(char *line)
+{
   int len = strlen(line);
 
   int charIndex = 0;
-  while(charIndex < len){
-    if(line[charIndex] == '>'){
-      char* newLine = malloc((len+3)*sizeof(char));
-      if(newLine == NULL){
+  while (charIndex < len)
+  {
+    if (line[charIndex] == '>')
+    {
+      char *newLine = malloc((len + 3) * sizeof(char));
+      if (newLine == NULL)
+      {
         return NULL;
       }
       strncpy(newLine, line, charIndex); // copied till before >
       strcat(newLine, " > ");
-      strcat(newLine, &line[charIndex+1]);
+      strcat(newLine, &line[charIndex + 1]);
 
       my_free(line); // free old one
       line = newLine;
@@ -214,15 +202,15 @@ char* preProcessLine(char* line){
       len = strlen(line);
       charIndex += 3;
     }
-    else{
-      charIndex ++;
+    else
+    {
+      charIndex++;
     }
   }
   // printf("%s\n", line);
 
   return line;
 }
-
 
 void errorOccured()
 {
@@ -350,7 +338,7 @@ void runCommand(int argc, char *argv[], char *output)
   }
   else
   {
-    int terminatedPid = waitpid(pid, NULL, 0);
+    // int terminatedPid = waitpid(pid, NULL, 0);
     // wait(NULL);
   }
 }
@@ -415,32 +403,6 @@ void addPath(int pathArgCount, char *pathArgs[]) // doesnt own char *pathArgs[]
       path_dirs[pathCount++] = strdup(pathArgs[i]);
     }
   }
-}
-
-handleRedirectRet *handleRedirect(char **tokens, int bufsize) // doesnt own tokens
-{
-  for (int i = 0; i < bufsize; i++)
-  {
-    if (strcmp(tokens[i], ">") == 0)
-    {
-      if (i != bufsize - 2)
-      {
-        errorOccured();
-        return NULL;
-      }
-      if (strcmp(tokens[i + 1], ">") == 0)
-      {
-        errorOccured();
-        return NULL;
-      }
-
-      handleRedirectRet *temp = malloc(sizeof(handleRedirectRet));
-      temp->output = strdup(tokens[i + 1]);
-      temp->OutputIndex = i + 1;
-      return temp;
-    }
-  }
-  return NULL;
 }
 
 getCommandsRet *getCommands(char *line)
