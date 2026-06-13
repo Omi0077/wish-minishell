@@ -327,7 +327,7 @@ void runCommand(int argc, char *argv[], char *output)
         open(output, O_CREAT | O_RDWR | O_TRUNC, S_IRWXU);
       }
       execv(finalPath, argv);
-      printf("this shouldnt print if everythings fine\n");
+      // printf("this shouldnt print if everythings fine\n");
       exit(EXIT_FAILURE);
     }
     else
