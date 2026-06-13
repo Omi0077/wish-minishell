@@ -76,6 +76,7 @@ void freeStringArray(char **buf, int len)
   my_free(buf);
 }
 
+char* preProcessLine(char* line);
 void errorOccured();
 parseLineRet *parseLine(char *line, char *delimiter);
 void runCommand(int argc, char *argv[], char *output);
@@ -109,6 +110,9 @@ int main(int argc, char *argv[])
 
       // replace \n caught by getline
       line[strcspn(line, "\n")] = '\0';
+
+      // pre-process line
+      line = preProcessLine(line);
 
       // parse commands out of line
       getCommandsRet *commands = getCommands(line);
@@ -189,6 +193,36 @@ int main(int argc, char *argv[])
     }
   }
 }
+
+char* preProcessLine(char* line){
+  int len = strlen(line);
+
+  int charIndex = 0;
+  while(charIndex < len){
+    if(line[charIndex] == '>'){
+      char* newLine = malloc((len+3)*sizeof(char));
+      if(newLine == NULL){
+        return NULL;
+      }
+      strncpy(newLine, line, charIndex); // copied till before >
+      strcat(newLine, " > ");
+      strcat(newLine, &line[charIndex+1]);
+
+      my_free(line); // free old one
+      line = newLine;
+
+      len = strlen(line);
+      charIndex += 3;
+    }
+    else{
+      charIndex ++;
+    }
+  }
+  // printf("%s\n", line);
+
+  return line;
+}
+
 
 void errorOccured()
 {
