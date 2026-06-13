@@ -86,6 +86,83 @@ int main(int argc, char *argv[])
   if (argc > 1)
   {
     fprintf(stdout, "%s %s\n", argv[0], argv[1]);
+    FILE* fileFD = fopen(argv[1], "r");
+    if (fileFD == NULL)
+    {
+      errorOccured();
+      exit(EXIT_FAILURE);
+    }
+
+    char *line = NULL;
+    size_t len = 0;
+    while (getline(&line, &len, fileFD) != -1) // read line from file one by one
+    {
+      // replace \n caught by getline
+      line[strcspn(line, "\n")] = '\0';
+
+      // pre-process
+      line = preProcessLine(line);
+
+      // parse commands out of line
+      getCommandsRet *temp_commands = getCommands(line);
+      Command *commands = temp_commands->cmds;
+      int commandCount = temp_commands->cmdsCount;
+
+      for (int i = 0; i < commandCount; i++)
+      {
+        Command *currCommand = &commands[i];
+
+        if (strcmp(currCommand->argv[0], "bye") == 0)
+        { // not checking EOF
+          my_free(line);
+          my_free(commands);
+          my_free(temp_commands);
+          freePath_dirs();
+          exit(EXIT_SUCCESS);
+        }
+        else if (strcmp(currCommand->argv[0], "path") == 0)
+        {
+          //
+          // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
+          addPath(currCommand->argc, currCommand->argv);
+          // printf("path_dirs: %s len: %d\n", path_dirs, strlen(path_dirs));
+        }
+        else if (strcmp(currCommand->argv[0], "cd") == 0)
+        {
+          if (currCommand->argc != 2)
+          {
+            errorOccured();
+          }
+          else
+          {
+            int cd = chdir(currCommand->argv[1]);
+            if (cd != 0)
+              errorOccured();
+          }
+        }
+        else
+        {
+          char *myArgs[currCommand->argc + 1];
+          for (int i = 0; i < currCommand->argc; i++)
+          {
+            myArgs[i] = currCommand->argv[i];
+          }
+          myArgs[currCommand->argc] = NULL; // set last as NULL
+
+          runCommand(currCommand->argc, myArgs, currCommand->outputFile);
+        }
+      }
+
+      while (wait(NULL) > 0); // wait for all process to finish
+
+      my_free(line);
+      my_free(commands);
+      my_free(temp_commands);
+    }
+
+    my_free(line);
+    freePath_dirs();
+    exit(EXIT_SUCCESS);
   }
   else
   {
@@ -165,10 +242,9 @@ int main(int argc, char *argv[])
           myArgs[currCommand->argc] = NULL; // set last as NULL
 
           runCommand(currCommand->argc, myArgs, currCommand->outputFile);
-
         }
       }
-      while(wait(NULL) > 0); // wait for all process to finish
+      while (wait(NULL) > 0); // wait for all process to finish
 
       my_free(line);
       my_free(commands);
@@ -176,7 +252,6 @@ int main(int argc, char *argv[])
     }
   }
 }
-
 
 char *preProcessLine(char *line)
 {

@@ -1,0 +1,4 @@
+ls -la
+ls & echo helloworld
+cat README.md
+echo lol
